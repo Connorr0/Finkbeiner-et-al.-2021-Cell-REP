@@ -1,0 +1,249 @@
+---
+title: "Untitled"
+author: "Connor Finkbeiner"
+date: "2/25/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warnings = F, message = F)
+```
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(plotly)
+library(cowplot)
+library(SeuratWrappers)
+library(monocle3)
+
+source("R:/People Folders/Connor/R_functions/Find_nCount_minimum.R")
+source("R:/People Folders/Connor/R_functions/UMAP_params.R")
+```
+
+```{r}
+D59 = Read10X("R:/Genomics/RNA-seq/Human\ fetal\ SC\ #1\ RNAseq\ Dev/59d_SI-3A-E3/outs/filtered_gene_bc_matrices/GRCh38")
+
+D59 = CreateSeuratObject(D59)
+D59$time_point = "D59"
+```
+
+```{r fig.width=20, fig.asp=.3}
+D59 = subset(D59, subset = nCount_RNA < quantile(D59$nCount_RNA, probs = .95)["95%"])
+
+find_cutoff(D59, min_cutoff = 20, dist = 200)
+
+D59 = subset(D59, subset = nCount_RNA > 1000,)
+
+hist(D59$nCount_RNA)
+```
+
+```{r}
+D59 = NormalizeData(D59)
+D59 = FindVariableFeatures(D59)
+D59 = ScaleData(D59, features = rownames(D59))
+D59 = RunPCA(D59, npcs = 100)
+
+ElbowPlot(D59, ndims = 100)
+```
+
+```{r}
+D59 = RunUMAP(D59, dims = 1:20, min.dist = .4, n.neighbors = 5)
+D59 = FindNeighbors(D59, dims = 1:30)
+D59 = FindClusters(D59, resolution = 2)
+D59 = FindClusters(D59, resolution = 1)
+
+DimPlot(D59)
+ggplotly(DimPlot(D59))
+
+D59 = readRDS("D59_ASeditedRES3.5.RDS")
+```
+
+```{r fig.asp = 1.6, fig.width = 20}
+UMAP_test_square(D59, 
+                 min_dist_range = seq(.1, .7, length.out = 5), 
+                 n.neighbors_range = c(5, 50, 500), 
+                 pcs_range = 1:20)
+```
+
+```{r}
+D59_3d = RunUMAP(D59, dims = 1:20, n.components = 3)
+
+D59_3d_frame = D59_3d@meta.data
+
+D59_3d_frame = cbind(D59_3d_frame, D59_3d@reductions$umap@cell.embeddings)
+
+plot_ly(D59_3d_frame, x = ~UMAP_1, y = ~UMAP_2, z = ~UMAP_3, color = ~seurat_clusters, size = 1)
+```
+
+```{r fig.asp=1.4}
+FeaturePlot(D59, c("ATOH7", "CRX", "GAP43", "VSX1", "POU4F3", "TFAP2A"), order = T)
+
+FeaturePlot(D59, c("ATOH7", "CRX", "PRDM1", "AIF1", "POU4F2", "CCND1"), order = T)
+
+FeaturePlot(D59, c("ATOH7", "CRX", "PRDM1", "TNF", "GFAP", "CCND1"), order = T)
+```
+
+```{r}
+D59$type = recode(D59$RNA_snn_res.1,
+                  `0` = "RGC", #GAP43
+                  `1` = "RGC", #GAP43
+                  `2` = "RGC", #GAP43
+                  `3` = "Progen", #location CCND1
+                  `4` = "Progen", #location CCND1
+                  `5` = "AC", # TFAP2A
+                  `6` = "RGC_transition", #Pou
+                  `7` = "T0", #maybe T3 also
+                  `8` = "AC_transition", #TFAP2A
+                  `9` = "Progen", #location CCND1
+                  `10` = "RGC", #GAP43
+                  `11` = "Progen", #location CCND1
+                  `12` = "Astrocyte?"
+                  )
+
+D59$type = as.character(D59$type)
+
+D59@meta.data[D59$RNA_snn_res.2 == 14, "type"] = "Microglia" #they did not want to split from the progenitors
+
+ggplotly(DimPlot(D59, group.by = "type"))
+```
+
+## A lot of monocle is interactive so I am just loading in the cds I made already
+
+```{r}
+# D59.cds <- as.cell_data_set(D59)
+# D59.cds <- cluster_cells(cds = D59.cds, reduction_method = "UMAP")
+# D59.cds <- learn_graph(D59.cds, use_partition = TRUE, learn_graph_control = list(prune_graph = F, minimal_branch_len = 5))
+# 
+# D59.cds <- order_cells(D59.cds)
+
+D59.cds = readRDS("D59_fetal_cds.RDS")
+
+plot_cells(D59.cds, color_cells_by = "pseudotime")
+
+# saveRDS(D59.cds, "D59_fetal_cds.RDS")
+```
+
+```{r}
+# D59.RGC <- choose_graph_segments(D59.cds)
+# rgc_cells = colnames(D59.RGC)
+# 
+# rm(D59.RGC)
+```
+
+```{r}
+# D59.AC <- choose_graph_segments(D59.cds)
+# AC_cells = colnames(D59.AC)
+# 
+# rm(D59.AC)
+```
+
+```{r}
+# D59.Photo <- choose_graph_segments(D59.cds)
+# Photo_cells = colnames(D59.Photo)
+# 
+# rm(D59.Photo)
+```
+
+## since all this comes from interactive input above I am also going to load in the old object
+```{r}
+# D59$branch = "not assigned"
+# 
+# D59$pseudotime = pseudotime(D59.cds)
+# 
+# D59@meta.data[rgc_cells, "branch"] = "RGC"
+# 
+# D59$RGC_branch = 0
+# D59@meta.data[rgc_cells, "RGC_branch"] = 1
+# D59@meta.data[rgc_cells, "branch"] = "RGC"
+# 
+# D59$AC_branch = 0
+# D59@meta.data[AC_cells, "AC_branch"] = 1
+# D59@meta.data[AC_cells, "branch"] = "AC"
+# 
+# D59$Photo_branch = 0
+# D59@meta.data[Photo_cells, "Photo_branch"] = 1
+# D59@meta.data[Photo_cells, "branch"] = "Photo"
+# 
+# 
+# D59@meta.data[intersect(Photo_cells, AC_cells), "branch"] = "Photo/AC"
+# D59@meta.data[intersect(intersect(Photo_cells, AC_cells), rgc_cells), "branch"] = "T0"
+# D59@meta.data[D59$type == "Progen", "branch"] = "Progen"
+# D59@meta.data[D59$type == "Microglia", "branch"] = "not assigned"
+
+D59 = readRDS("D59_branches.RDS")
+# I don't like that the microglia aren't splitting out, I want to fix that
+DimPlot(D59, group.by = "branch")
+
+
+# saveRDS(D59, "D59_branches.RDS")
+```
+
+
+```{r}
+#I made this a while ago
+tf_dict = read.csv(file = "R:/Genomics/scATAC-seq/Marcus and Connor/Useful data tables/motif_gene_name_datatable.csv")
+
+
+d59_genes = Matrix::rowSums(D59@assays$RNA@data > 0)
+d59_genes = d59_genes[d59_genes > 50]
+
+motifs_in_D53 = intersect(tf_dict$HGNC.symbol, names(d59_genes))
+
+length(motifs_in_D53)
+length(tf_dict$HGNC.symbol)
+
+tf_D59 = tf_dict[tf_dict$HGNC.symbol %in% motifs_in_D53,]
+
+length(unique(tf_D59$motif_names))
+```
+
+```{r fig.width=20, fig.asp=5}
+D59_meta_RGC = D59@meta.data
+
+D59_meta_RGC = D59_meta_RGC[D59_meta_RGC$RGC_branch == 1,]
+
+D59_meta_RGC = D59_meta_RGC[order(D59_meta_RGC$pseudotime),]
+
+tf_mtx = D59@assays$RNA@scale.data
+
+tf_mtx = tf_mtx[unique(motifs_in_D53),rownames(D59_meta_RGC)]
+
+pheatmap::pheatmap(tf_mtx, 
+                   show_colnames = F, 
+                   annotation_col = D59_meta_RGC[c("type", "pseudotime")],
+                   breaks = seq(-2, 2, length.out = 100), 
+                   cluster_cols = F)
+```
+
+```{r}
+Genes_intrest_list <- readxl::read_excel(paste0(server_path, "/People Folders/Connor/Human scATAC/D53 (fetal)/Genes_intrest_list.xlsx"))
+
+for (i in colnames(Genes_intrest_list)){
+  genes_use = unlist(Genes_intrest_list[,i])
+  
+  for (g in genes_use){
+    file_n = paste0("../RNA_plots_F1/Feat_", g, ".pdf")
+    
+    p = FeaturePlot(D59, features = g) + NoAxes()
+    
+    ggsave(plot = p, 
+         filename = file_n, 
+         height = 4, width = 4.5)
+  }
+}
+```
+
+```{r fig.asp=.3, fig.width=20}
+FeaturePlot(D59, features = c("ATOH7", "TCF4"), blend = T, max.cutoff = 3, pt.size = .5, blend.threshold = .3)
+```
+
+
+```{r}
+fv_photo = D59@assays$RNA@data[,D59@assays$RNA@data["CRX",] > 1]
+fv_photo = fv_photo[Matrix::rowSums(fv_photo) > 0,]
+
+write.csv(fv_photo, file = "fovea_photo.csv")
+```
+

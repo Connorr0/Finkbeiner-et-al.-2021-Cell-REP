@@ -1,0 +1,74 @@
+---
+title: "Amicrine vs Photoreceptor branch D59"
+author: "Connor Finkbeiner"
+date: "3/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(plotly)
+library(cowplot)
+library(SeuratWrappers)
+library(monocle3)
+
+source("R:/People Folders/Connor/R_functions/Find_nCount_minimum.R")
+source("R:/People Folders/Connor/R_functions/UMAP_params.R")
+```
+
+
+# Here is how I have branches named now:
+```{r}
+D59 = readRDS("D59_branches.RDS")
+
+ggplotly(DimPlot(D59, group.by = "branch"))
+```
+
+## Here are some cone, amicrine, and RGC markers
+
+I notices that the cone stub does have more cone genes on than I thought, but it also blocks off 
+```{r fig.asp = 1.4}
+FeaturePlot(D59, c("OTX2", "CRX", "THRB", "RBP4", "TFAP2A", "POU4F2"), order = T)
+FeaturePlot(D59, c("OTX2", "CRX", "THRB", "PRDM1", "TFAP2A", "POU4F2"), order = T)
+FeaturePlot(D59, c("OTX2", "ATOH7", "THRB", "RBP4", "TFAP2A", "POU4F2"), order = T)
+```
+
+```{r}
+D59_3d = RunUMAP(D59, dims = 1:30, n.components = 3)
+
+D59_3d_frame = D59_3d@meta.data
+
+D59_3d_frame = cbind(D59_3d_frame, D59_3d@reductions$umap@cell.embeddings)
+
+#add genes
+D59_3d_frame = cbind(D59_3d_frame, t(D59_3d@assays$RNA@data[c("OTX2", "CRX", "THRB", "RBP4", "TFAP2A", "POU4F2"),]))
+
+
+plot_ly(D59_3d_frame, x = ~UMAP_1, y = ~UMAP_2, z = ~UMAP_3, color = ~branch, size = 1)
+```
+
+```{r}
+plot_ly(D59_3d_frame, x = ~UMAP_1, y = ~UMAP_2, z = ~UMAP_3, color = ~OTX2, size = 1)
+plot_ly(D59_3d_frame, x = ~UMAP_1, y = ~UMAP_2, z = ~UMAP_3, color = ~CRX, size = 1)
+plot_ly(D59_3d_frame, x = ~UMAP_1, y = ~UMAP_2, z = ~UMAP_3, color = ~THRB, size = 1)
+plot_ly(D59_3d_frame, x = ~UMAP_1, y = ~UMAP_2, z = ~UMAP_3, color = ~RBP4, size = 1)
+plot_ly(D59_3d_frame, x = ~UMAP_1, y = ~UMAP_2, z = ~UMAP_3, color = ~TFAP2A, size = 1)
+plot_ly(D59_3d_frame, x = ~UMAP_1, y = ~UMAP_2, z = ~UMAP_3, color = ~POU4F2, size = 1)
+```
+
+##ATAC data
+```{r}
+d53_ATAC = readRDS("../d53_ATAC_branches2.RDS")
+
+DimPlot(d53_ATAC, group.by = "branch")
+
+DefaultAssay(d53_ATAC) = "chromvar"
+
+FeaturePlot(d53_ATAC, "OTX2", min.cutoff = 0)
+```
