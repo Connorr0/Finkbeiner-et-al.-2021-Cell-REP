@@ -1,0 +1,532 @@
+---
+title: "RGC psuedotime motif profile V.6"
+author: "Connor Finkbeiner"
+date: "3/15/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading everything
+
+```{r}
+library(Seurat)
+library(Signac)
+library(dplyr)
+library(stringr)
+library(pheatmap)
+library(plotly)
+library(Matrix)
+library(RColorBrewer)
+library(SeuratWrappers)
+library(monocle3)
+
+
+server_path = "R:"
+
+source(paste0(server_path, "/People Folders/Connor/R_functions/CoveragePlots.R"))
+source(paste0(server_path, "/People Folders/Connor/R_functions/ATAC_line.R"))
+```
+
+```{r}
+colors <- read.csv(paste0(server_path, "/Publications/Human_scATAC_2021/colors_final.csv"), encoding="UTF-8", header=FALSE)
+colors[1,1] = "MPC"
+
+rownames(colors) = colors$V1
+
+colors
+```
+
+This could be useful later. we can use it to find similar motifs.
+```{r}
+Sim_mtx = readRDS(paste0(server_path, "/Genomics/scATAC-seq/Marcus and Connor/connor_motif_search/Sim_mtx.RDS"))
+pheatmap(Sim_mtx, show_rownames = F, show_colnames = F)
+```
+
+## RNA data
+```{r}
+D59 = readRDS("RNA/D59_branches.RDS")
+
+DimPlot(D59, group.by = "branch")
+DimPlot(D59, group.by = "type")
+
+
+D59@meta.data[D59$type == "Progen", "RGC_branch"] = 1
+DimPlot(D59, group.by = "RGC_branch")
+```
+
+```{r}
+# get motifs in the fetal D59 data
+d59_genes = Matrix::rowSums(D59@assays$RNA@data > 0)
+
+print("Number of cells expressing all data.")
+d59_genes["VSX1"]
+d59_genes["SOX9"]
+
+rgc_sub = subset(D59, subset = RGC_branch == 1)
+d59_rgc_genes = Matrix::rowSums(rgc_sub@assays$RNA@data > 0)
+
+print("Number of cells expressing RGC branch.")
+d59_rgc_genes["VSX1"]
+d59_rgc_genes["SOX9"]
+
+d59_rgc_genes_mean = Matrix::rowMeans(rgc_sub@assays$RNA@data)
+
+print("Mean expression levels RGC branch.")
+d59_rgc_genes_mean["VSX1"]
+d59_rgc_genes_mean["SOX9"]
+d59_rgc_genes_mean["ATOH7"]
+```
+
+
+##ATAC data
+```{r}
+d53_ATAC = readRDS("d53_ATAC_no_unk_branches_high_res.RDS")
+
+DimPlot(d53_ATAC, group.by = "branch")
+
+FeaturePlot(d53_ATAC, "RGC_branch", cols = c("grey", colors["RGC", "V2"]))
+```
+
+## Motif to gene name translator
+
+```{r}
+#I made this a while ago
+tf_dict = read.csv(file = paste0(server_path, "/Genomics/scATAC-seq/Marcus and Connor/Useful data tables/motif_gene_name_datatable.csv"))
+
+# get motifs in the fetal D59 data
+d59_genes = Matrix::rowSums(D59@assays$RNA@data > 0)
+d59_genes = d59_genes[d59_genes > 50]
+
+motifs_in_D53 = intersect(tf_dict$HGNC.symbol, names(d59_genes))
+
+tf_D59 = tf_dict[tf_dict$HGNC.symbol %in% motifs_in_D53,]
+
+
+# get motifs in the fetal D59 RGCs
+rgc_sub = subset(D59, subset = RGC_branch == 1 | type == "Progen")
+# d59_rgc_genes = Matrix::rowSums(rgc_sub@assays$RNA@data > 0)
+# quantile(d59_rgc_genes)
+# d59_rgc_genes = d59_rgc_genes[as.numeric(d59_rgc_genes) > 50]
+
+d59_rgc_genes_mean = Matrix::rowMeans(rgc_sub@assays$RNA@data)
+d59_rgc_genes_mean = d59_rgc_genes_mean[d59_rgc_genes_mean > .1] #just below VSX1
+
+motifs_in_D53_rgc = intersect(tf_dict$HGNC.symbol, names(d59_rgc_genes_mean))
+
+tf_D59_RGC = tf_dict[tf_dict$HGNC.symbol %in% motifs_in_D53_rgc,]
+
+
+tf_D59_RGC = tf_D59_RGC[tf_D59_RGC$HGNC.symbol != "UNK",]
+
+#remove combined motifs
+tf_D59_RGC = tf_D59_RGC[!grepl("::", tf_D59_RGC$motif_names, fixed = T),]
+```
+
+
+# First attempt: all the motifs with expression in the RGCs (more than 50 cells express TF)
+```{r fig.width=20, fig.asp=5}
+# select cells
+Meta_rgc = d53_ATAC@meta.data
+Meta_rgc = Meta_rgc[Meta_rgc$RGC_branch == 1 | Meta_rgc$branch == "not assigned",]
+Meta_rgc[Meta_rgc$branch == "not assigned", "pseudotime"] = -1
+
+Meta_rgc = Meta_rgc[order(Meta_rgc$pseudotime),]
+
+Meta_rgc[Meta_rgc$branch == "not assigned", "pseudotime"] = NA
+
+Meta_rgc$short_type = factor(Meta_rgc$short_type, levels = intersect(levels(Meta_rgc$short_type), unique(Meta_rgc$short_type)))
+
+
+pscols = viridis::viridis(100)
+names(pscols) = seq(0, max(Meta_rgc$pseudotime[is.finite(Meta_rgc$pseudotime)]), length.out = 100)
+
+type_cols = colors$V2[colors$V1 %in% levels(Meta_rgc$short_type)]
+names(type_cols) = colors$V1[colors$V1 %in% levels(Meta_rgc$short_type)]
+
+#type_cols = type_cols[levels(Meta_rgc$short_type)]
+
+my_cols = list(pseudotime = pscols, short_type = type_cols)
+
+
+
+
+# Get Motif matrix (chromvar)
+tf_mtx = d53_ATAC@assays$chromvar@data
+tf_mtx_rgc = tf_mtx[unique(tf_D59_RGC$motif_names), rownames(Meta_rgc)]
+
+
+
+# set up thresholds for diffrence for later
+mean_v = rowMeans(abs(tf_mtx_rgc))
+quantile(mean_v)
+
+row_info = data.frame(mean_v)
+row_info$thresh = as.numeric(row_info$mean_v > 1.2)
+
+
+
+#plot heatmap (rows with purple are kept for the next list)
+pheatmap::pheatmap(tf_mtx_rgc, 
+                   show_colnames = F, 
+                   annotation_col = Meta_rgc[c("short_type", "pseudotime")],
+                   breaks = seq(-2, 2, length.out = 100), 
+                   cluster_cols = F, clustering_method = "ward.D2", 
+                   cutree_rows = 40, 
+                   annotation_row = row_info, 
+                   annotation_colors = my_cols)
+```
+
+# sorta hacky
+```{r}
+# DefaultAssay(d53_ATAC) = "chromvar"
+# 
+# counts_frame = d53_ATAC@assays[["chromvar"]]@data
+# counts_frame = counts_frame[complete.cases(counts_frame),]
+# 
+# genes <- data.frame(row.names(counts_frame))
+# names(genes) <- c("gene_short_name")
+# row.names(genes) <- genes$gene_short_name
+# 
+# 
+# 
+# d53_ATAC_chrom_cds = new_cell_data_set(counts_frame, 
+#                             cell_metadata = d53_ATAC@meta.data, 
+#                             gene_metadata = genes)
+# 
+# 
+# d53_ATAC_chrom_cds = Seurat_to_monocle3(Se = d53_ATAC, assay = "chromvar")
+```
+
+
+
+
+
+
+
+#Second attempt: shorter list with bigger diffrences only
+
+```{r fig.asp= 2, fig.width=20}
+# keep only big diffrences
+shortlist_mtx = tf_mtx_rgc[row_info$thresh == 1,]
+
+DefaultAssay(d53_ATAC) = "chromvar"
+# for (i in rownames(shortlist_mtx)){
+#   p2 = FeaturePlot(d53_ATAC, features = i, min.cutoff = -2, max.cutoff = 2) + scale_color_gradientn(colors = rev(brewer.pal(n = 7, name = "RdYlBu"))) 
+#   ggsave(filename = paste0(server_path, "/Publications/Human_scATAC_2021/Figure 1 D53 Fetal/Plots/motif_plots/Motif_UMAP_", str_replace_all(i, "[:]", "_"), ".pdf"), width = 6, height = 6.5, plot = p2)
+#   rm(p2)
+# }
+```
+
+```{r fig.asp= 2, fig.width=20}
+# clean some things up for later
+rownames(shortlist_mtx) = str_replace_all(rownames(shortlist_mtx), "[:]", "_")
+rownames(shortlist_mtx) = str_replace_all(rownames(shortlist_mtx), "[(]", "_")
+rownames(shortlist_mtx) = str_remove(rownames(shortlist_mtx), "[)]")
+rownames(shortlist_mtx) = str_remove(rownames(shortlist_mtx), "[-]")
+
+
+pheatmap::pheatmap(shortlist_mtx, 
+                   show_colnames = F, 
+                   annotation_col = Meta_rgc[c("short_type", "pseudotime")],
+                   breaks = seq(-2, 2, length.out = 100), 
+                   cluster_cols = F, clustering_method = "ward.D2", 
+                   cutree_rows = 20)
+```
+
+```{r}
+dict_2 = data.frame(motif_names = rownames(tf_mtx_rgc[row_info$thresh == 1,]), 
+                    cleaned_names = rownames(shortlist_mtx))
+
+tf_dict2 = merge(tf_dict, dict_2)
+
+tf_dict2[grepl("Dux", tf_dict2$motif_names),]
+```
+
+# Third attempt: order by psuedotime peak
+
+Bellow I fit a third order polynomial that fits psuedotime and chromvar motif score and then order cells by the peak/maxima. Plots for this are at the end of the documant and expalin better.
+
+```{r}
+tf_pst = data.frame(Motif = character(), pst_peak = double())
+
+
+
+
+
+
+for (i in rownames(shortlist_mtx)){
+  temp_frame = Meta_rgc[c("pseudotime", "orig.ident")]
+  temp_frame = temp_frame[!is.na(temp_frame$pseudotime),]
+  temp_frame[i] = shortlist_mtx[i, rownames(temp_frame)]
+  
+  
+  
+  
+  tf_lm = lm(as.formula(paste(i, "~ pseudotime + I(pseudotime^2) + I(pseudotime^3)")),
+             data = temp_frame)
+  
+  temp_frame$TF_fit = tf_lm$fitted.values
+
+  max_val = temp_frame$pseudotime[temp_frame$TF_fit == max(temp_frame$TF_fit)]
+  
+
+  tf_pst[nrow(tf_pst)+1,] = c(i, max_val)
+  
+  
+  p = ggplot(temp_frame, aes_string(x = "pseudotime", y = i)) +
+    geom_point(size = .5) +
+    stat_smooth(method = "lm", formula = y ~ x + I(x^2) + I(x^3), size = 1)
+  
+  ggsave(filename = paste0(server_path, "/Publications/Human_scATAC_2021/Pre-sub Figures and Panels/Figure1 (D53 Fetal)/Plots_updated_8_11_(Cone_pre clustered)/Cascade_plots/RGC_dots/RGC_TFS_scatter_", i, ".pdf"), width = 6, height = 3, plot = p)
+}
+
+tf_pst$pst_peak = as.numeric(tf_pst$pst_peak)
+
+
+tf_pst = tf_pst[order(tf_pst$pst_peak),]
+
+
+#order the same way
+tf_dict2$cleaned_names2 = factor(tf_dict2$cleaned_names, levels = tf_pst$Motif)
+tf_dict2 = tf_dict2[order(tf_dict2$cleaned_names2),]
+
+tf_dict2$HGNC.symbol
+
+write.csv(tf_dict2, "RGC_TFs.csv")
+```
+
+
+```{r fig.width=20, fig.asp=.4}
+p_line_RGC = multi_line_plot(Meta_rgc[c("pseudotime", "orig.ident")],
+                c(#"TEAD1", 
+                  "SOX2", 
+                  "VSX2",
+                  "Dlx1", 
+                  "LHX9", 
+                  "RAX",
+                  "ASCL1", 
+                  "ATOH7", 
+                  "NEUROD1",
+                  "POU4F2", 
+                  "EBF1", 
+                  "Isl1", 
+                  "ONECUT1"), 
+                shortlist_mtx, size = 2)
+
+
+
+ggplotly(p_line_RGC)
+p_line_RGC
+```
+
+
+```{r fig.asp= 1, fig.width=20}
+levels(Meta_rgc$short_type)
+
+pheatmap::pheatmap(shortlist_mtx[tf_pst$Motif,], 
+                   show_colnames = F, 
+                   annotation_col = Meta_rgc[c("short_type", "pseudotime")],
+                   breaks = seq(-2, 2, length.out = 100), 
+                   cluster_cols = F, 
+                   cluster_rows = F, 
+                   annotation_row = row_info, annotation_colors = my_cols)
+```
+
+```{r}
+RGC_gene_anno <- read.csv(paste0(server_path, "/People Folders/Connor/Human scATAC/D53 (fetal)/RGC_gene_anno.csv", row.names=NULL))
+colnames(RGC_gene_anno)[1] = "gene"
+
+
+rownames(RGC_gene_anno) = RGC_gene_anno$gene
+#RGC_gene_anno$gene = NULL
+
+Levi_cols = c("#393232", "#4a47a3", "#00917c", "#5fd60b")
+names(Levi_cols) = unique(RGC_gene_anno$Levi)[unique(RGC_gene_anno$Levi) != ""]
+
+
+RGC_gene_anno[RGC_gene_anno == ""] = NA
+my_cols_Levi = my_cols
+my_cols_Levi[["Levi"]] = Levi_cols
+```
+
+
+## Adding the progenitors back in
+```{r fig.width=20}
+# Meta_rgc_prog = Meta_rgc[c("short_type", "pseudotime")]
+# Meta_rgc_prog$type = as.character(Meta_rgc_prog$type)
+# 
+# Meta_rgc_prog[colnames(prog_mtx), "short_type"] = "Progen"
+# Meta_rgc_prog[colnames(prog_mtx), "pseudotime"] = NA
+# 
+# shortlist_prog = cbind(prog_mtx, shortlist_mtx)
+
+pheatmap::pheatmap(shortlist_mtx[tf_pst$Motif,], 
+                   show_colnames = F, 
+                   annotation_col = Meta_rgc[c("short_type", "pseudotime")],
+                   breaks = seq(-2, 2, length.out = 100), 
+                   cluster_cols = F, 
+                   cluster_rows = F, 
+                   #annotation_row = RGC_gene_anno["Levi"], 
+                   annotation_colors = my_cols)
+```
+
+```{r}
+# handpicked_motifs = c("RORB", "SOX2", "SOX4", "SOX9", "VSX1", "VSX2", "TEAD1", "Smad2__Smad3", "BACH1", "Dlx2", "LHX2", "RAX", "RAX2", "VAX2", "Crx", "OTX2", "ASCL1", "Tcf12", "NEUROD1", "NEUROG1", "ATOH7", "TFAP4", "BHLHE22", "DPRX", "PITX2") #"ZBTB18",
+
+handpicked_motifs = c("TEAD1", "SOX2", "SOX4", "SOX9", "ARID3B", "VAX2", "VSX2", "LHX2", "LHX9", "RAX", "Dlx2", "TGIF1", "ASCL1", "RORB", "BHLHE22", "NEUROD1", "ATOH7", "NHLH1", "TCF4", "POU4F1", "POU4F2", "ZEB1", "EBF3", "EBF1", "MEIS1_var.2", "Isl1", "ONECUT2")
+
+setdiff(handpicked_motifs, tf_pst$Motif)
+
+pheatmap::pheatmap(d53_ATAC[["chromvar"]]@data[intersect(handpicked_motifs, rownames(d53_ATAC[["chromvar"]]@data)), rownames(Meta_rgc)], 
+                   show_colnames = F, 
+                   annotation_col = Meta_rgc[c("short_type", "pseudotime")],
+                   breaks = seq(-2, 2, length.out = 100), 
+                   cluster_cols = F, 
+                   cluster_rows = F, 
+                   annotation_colors = my_cols)
+```
+
+
+
+This is my testsetup for the ordering. I think it shows what I did better than I could explain.
+
+```{r}
+Meta_rgc_plot = Meta_rgc
+Meta_rgc_plot$Atoh7 = tf_mtx_rgc["ATOH7",]
+Meta_rgc_plot = Meta_rgc_plot[is.finite(Meta_rgc_plot$pseudotime),]
+
+atoh_lm = lm(Atoh7 ~ pseudotime + I(pseudotime^2) + I(pseudotime^3), data = Meta_rgc_plot)
+Meta_rgc_plot$Atoh7_fit = atoh_lm$fitted.values
+
+
+
+ggplot(Meta_rgc_plot, aes(x = pseudotime, y = Atoh7)) +
+  geom_point() +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2) + I(x^3) + + I(x^4), size = 1) + geom_vline(xintercept = Meta_rgc_plot$pseudotime[Meta_rgc_plot$Atoh7_fit == max(Meta_rgc_plot$Atoh7_fit)], color = "green", linetype="longdash")
+```
+
+
+#order RNA by shortlist
+
+
+```{r fig.width=10, fig.asp = 3}
+# tf_dict2
+# #
+# mainpath = paste0(server_path, "/Publications/Human_scATAC_2021/Figure 1 D53 Fetal/Plots/Coverage Plots/motif stack coverage/RGC")
+# 
+# motifset = tf_dict2$motif_names[!grepl("Jun", tf_dict2$motif_names, ignore.case = T)]
+# 
+# DefaultAssay(d53_ATAC) = "peaks"
+# 
+# done_gns = c()
+# for (m in rownames(tf_mtx_rgc[row_info$thresh == 1,])){
+#   
+#   # get gene name
+#   gns = tf_dict[tf_dict$motif_names == m, "HGNC.symbol"]
+#   #gns = tf_dict[tf_dict$motif_names == "ONECUT1", "HGNC.symbol"]
+#   
+#   
+#   for (g in gns){
+#     
+#     #if we have not done it already
+#     if (!(g %in% done_gns) & g != "UNK"){
+#       
+#       
+#       
+#       super_cov = Motif_CoveragePlot(d53_ATAC,
+#                                      g,
+#                                      motifs = motifset,
+#                                      cov_h = 40,
+#                                      motif_h = 3,
+#                                      motif_label_text_size = 8)
+#       
+#       print(super_cov)
+#       
+#       ggsave(plot = super_cov, 
+#                filename = paste0(mainpath, "/", g, "_motif_cov.pdf"), 
+#                width = 20, 
+#                height = 20*1.4, 
+#              limitsize = F)
+#     }
+#   }
+# }
+```
+
+```{r fig.asp = 1}
+pheatmap(Sim_mtx[tf_dict2$motif_names, tf_dict2$motif_names], show_rownames = T, show_colnames = T, breaks = seq(0, 1, length.out = 100), cluster_rows = F, cluster_cols = F)
+```
+
+```{r}
+DimPlot(D59, group.by = "type")
+
+D59$short_type = recode(D59$type,
+                        "Progen" = "MPC",
+                        "RGC_transition" = "RGCpre",
+                        "AC" = "AMC",
+                        "AC_transition" = "H/Apre",
+                        "T0" = "Npre")
+
+rgc_rna_sub = subset(D59, subset = RGC_branch == 1 &
+                       type != "Microglia")
+
+DimPlot(rgc_rna_sub, group.by = "branch")
+
+DimPlot(rgc_rna_sub, group.by = "short_type")
+```
+
+```{r}
+RNA_RGC_meta = rgc_rna_sub@meta.data
+RNA_RGC_meta = RNA_RGC_meta[c("pseudotime", "short_type")]
+RNA_RGC_meta = RNA_RGC_meta[order(RNA_RGC_meta$pseudotime),]
+
+RNA_RGC_mtx = rgc_rna_sub@assays$RNA@scale.data[tf_dict2$HGNC.symbol, rownames(RNA_RGC_meta)]
+```
+
+#RNA expression in same order as ATAC motif acessability
+
+This was not so exciting. Maybe we needed more RNA depth? Also some of these TFs were likely not specific. These datasets are also on diffrent cell goups which shifts things around.
+
+```{r fig.asp= 1, fig.width=20}
+unique(RNA_RGC_meta$short_type)
+RNA_RGC_meta$RNA_short_type = RNA_RGC_meta$short_type
+
+type_cols2 = colors$V2[colors$V1 %in% unique(RNA_RGC_meta$RNA_short_type)]
+names(type_cols2) = colors$V1[colors$V1 %in% unique(RNA_RGC_meta$RNA_short_type)]
+
+#type_cols = type_cols[levels(Meta_rgc$short_type)]
+
+my_cols_R = list(pseudotime = pscols, RNA_short_type = type_cols2)
+
+colfunc <- colorRampPalette(c("#f003fc", "black", "#fcf403"))
+
+pheatmap::pheatmap(RNA_RGC_mtx, 
+                   show_colnames = F, 
+                   annotation_col = RNA_RGC_meta[c("RNA_short_type", "pseudotime")],
+                   breaks = seq(-2, 2, length.out = 100), 
+                   cluster_cols = F, 
+                   cluster_rows = F, 
+                   color = colfunc(100), annotation_colors = my_cols_R)
+```
+
+```{r}
+colors
+```
+
+
+```{r}
+# for (i in tf_dict2$HGNC.symbol){
+#   p2 = FeaturePlot(D59, features = i, min.cutoff = -2, max.cutoff = 2) 
+#   ggsave(filename = paste0(server_path, "/Publications/Human_scATAC_2021/Figure 1 D53 Fetal/Plots/motif_plots/RNA_plots/RNA_UMAP_", str_replace_all(i, "[:]", "_"), ".pdf"), width = 6, height = 6.5, plot = p2)
+#   rm(p2)
+# }
+
+```
+
+
+```{r fig.asp=1.4}
+FeaturePlot(rgc_rna_sub, c("NEUROD1", "ASCL1", "ATOH7", "ISL1", "POU4F2", "ONECUT2"))
+```
+
