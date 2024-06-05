@@ -1,0 +1,130 @@
+---
+title: "Atoh7 validated enhancers"
+author: "Connor Finkbeiner"
+date: "10/18/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading libraries and functions
+```{r}
+library(Seurat)
+library(Signac)
+library(dplyr)
+library(stringr)
+library(pheatmap)
+library(plotly)
+library(Matrix)
+library(RColorBrewer)
+library(SeuratWrappers)
+library(monocle3)
+
+
+server_path = "/Volumes/Data"
+
+source(paste0(server_path, "/People Folders/Connor/R_functions/CoveragePlots.R"))
+source(paste0(server_path, "/People Folders/Connor/R_functions/peak_plots.R"))
+```
+
+```{r}
+cell_colors <- read.csv(paste0(server_path, "/Publications/Human_scATAC_2021/Pre-sub Figures and Panels/colors_final.csv"), encoding="UTF-8", header=FALSE)
+cell_colors[1,1] = "MPC"
+
+rownames(cell_colors) = cell_colors$V1
+
+cell_colors
+```
+
+## Loading the ATAC data
+```{r}
+d53_ATAC = readRDS(paste0(server_path, "/People Folders/Connor/Human scATAC/D53 (fetal)/d53_ATAC_no_unk_branches_high_res.RDS"))
+
+DimPlot(d53_ATAC, group.by = "short_type", cols = cell_colors[levels(d53_ATAC$short_type), "V2"])
+```
+
+```{r}
+# CLF = ClosestFeature(d53_ATAC,
+#                      rownames(d53_ATAC))
+# 
+# ggplot(data=CLF, aes(x=distance, group=1, fill = 1)) +
+#     geom_density(adjust=1.5, alpha=.4)
+```
+
+```{r}
+# CLF
+# 
+# unique(CLF$type)
+```
+
+```{r}
+write.table(stringr::str_split_fixed(rownames(d53_ATAC), pattern = "-", 3), 
+            "d53_macs2_peaks.bed", 
+            col.names = F,
+            row.names = F,
+            quote = F, sep = "\t")
+```
+
+```
+To get the annotations we ran Homer (annotatePeaks.pl). I do not have the exact command that we ran but it should look something like this:
+
+annotatePeaks.pl d53_macs2_peaks.bed hg38 -annStats ann_stats.txt > ann.txt
+
+Where d53_macs2_peaks.bed is the output from the chunk above and ann_stats.txt is where you want the annotation counts for each feature to be stored (in the next chunk it is d53_peaks_macs2_ann_stats_short.txt).
+
+You can also pass the exact GTF you used for the alignment with the -gtf flag. 
+
+Documentation on annotatePeaks.pl: http://homer.ucsd.edu/homer/ngs/annotation.html
+```
+
+
+```{r}
+d53_peaks_macs2_ann_stats_short <- read.delim("/Volumes/Data/People Folders/Connor/Human scATAC/D53 (fetal)/d53_peaks_macs2_ann_stats_short.txt")
+d53_peaks_macs2_ann_stats_short
+
+d53_peaks_macs2_ann_stats_short$fraction = d53_peaks_macs2_ann_stats_short$Number.of.peaks / sum(d53_peaks_macs2_ann_stats_short$Number.of.peaks)
+d53_peaks_macs2_ann_stats_short$ymax = cumsum(d53_peaks_macs2_ann_stats_short$fraction)
+d53_peaks_macs2_ann_stats_short$ymin = c(0, head(d53_peaks_macs2_ann_stats_short$ymax, n=-1))
+```
+
+```{r}
+ggplot(d53_peaks_macs2_ann_stats_short, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=Annotation)) +
+     geom_rect() +
+     coord_polar(theta="y") + # Try to remove that to understand how the chart is built initially
+     xlim(c(2, 4)) + # Try to remove that to see how to make a pie chart
+  theme_void()
+```
+
+```{r}
+d53_peaks_macs2_ann_stats_shorter = d53_peaks_macs2_ann_stats_short
+
+d53_peaks_macs2_ann_stats_shorter$anno = d53_peaks_macs2_ann_stats_shorter$Annotation
+d53_peaks_macs2_ann_stats_shorter$anno[d53_peaks_macs2_ann_stats_shorter$Annotation %in% 
+                                         c("miRNA", "ncRNA", "TTS", "pseudo", 
+                                           "snoRNA", "scRNA", "rRNA" )] = "other"
+
+ggplot(d53_peaks_macs2_ann_stats_shorter, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=anno)) +
+     geom_rect() +
+     coord_polar(theta="y") + # Try to remove that to understand how the chart is built initially
+     xlim(c(2, 4)) + # Try to remove that to see how to make a pie chart
+  theme_void()
+```
+
+```{r}
+d53_peaks_macs2_ann_stats_shorter[d53_peaks_macs2_ann_stats_shorter$anno %in% 
+                                         c("Exon", "Intergenic", "Intron", "Promoter"),]
+```
+
+
+```{r}
+ggplot(d53_peaks_macs2_ann_stats_shorter[d53_peaks_macs2_ann_stats_shorter$anno %in% 
+                                         c("Exon", "Intergenic", "Intron", "Promoter"),], 
+       aes(ymax=ymax, ymin=ymin, xmax=4, xmin=2, fill=anno)) +
+     geom_rect() +
+     coord_polar(theta="y") + # Try to remove that to understand how the chart is built initially
+     xlim(c(2, 4)) + # Try to remove that to see how to make a pie chart
+  theme_void()
+```
+

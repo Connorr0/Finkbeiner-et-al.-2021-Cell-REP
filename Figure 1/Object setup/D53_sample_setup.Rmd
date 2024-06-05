@@ -1,0 +1,344 @@
+---
+title: "Untitled"
+author: "Connor Finkbeiner"
+date: "11/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Seurat)
+library(Signac)
+library(dplyr)
+library(GenomeInfoDb)
+library(EnsDb.Hsapiens.v86)
+library(ggplot2)
+library(patchwork)
+library(TFBSTools)
+library(JASPAR2020)
+library(viridis)
+library(stringr)
+library(pheatmap)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(monocle3)
+library(cicero)
+library(stringr)
+
+set.seed(1234)
+```
+
+
+#object creation
+```{r}
+counts <- Read10X_h5(filename = "R:/Genomics/scATAC-seq/scATAC_10_16_2020/SCA6_d53_Macs2_reanalysis/outs/filtered_peak_bc_matrix.h5")
+
+#unlike scRNA-seq data scATAC-seq data comes with metadata that we can load into the object
+metadata <- read.csv(
+  file = "R:/Genomics/scATAC-seq/scATAC_10_16_2020/SCA6_d53_Macs2_reanalysis/outs/singlecell.csv",
+  header = TRUE,
+  row.names = 1
+)
+
+chrom_assay <- CreateChromatinAssay(
+  counts = counts,
+  sep = c(":", "-"),
+  genome = 'hg38',
+  fragments = 'R:/Genomics/scATAC-seq/scATAC_10_16_2020/SCA6_d53_Macs2_reanalysis/outs/fragments.tsv.gz',
+  min.cells = 10,
+  min.features = 200
+)
+
+d53_ATAC <- CreateSeuratObject(
+  counts = chrom_assay,
+  assay = "peaks",
+  meta.data = metadata
+)
+
+
+length(colnames(counts))
+length(rownames(metadata))
+length(setdiff(rownames(metadata), colnames(counts)))
+length(setdiff(colnames(counts), rownames(metadata)))
+
+saveRDS(d53_ATAC, "d53_ATAC.RDS")
+```
+
+#peaks are recalled on the Mac
+I thought this would be a good way to keep things consistent between datasets, since I haven't run Macs2 on all the data myself.
+```{r}
+d53_ATAC = readRDS("d53_ATAC.Rds")
+
+#change fragment path for mac
+DefaultAssay(d53_ATAC) = "peaks"
+
+frags <- Fragments(d53_ATAC)[[1]] # assuming there's only one fragment object in the assay
+frags <- UpdatePath(frags, "/Volumes/Data/Genomics/scATAC-seq/scATAC_10_16_2020/SCA6_d53_Macs2_reanalysis/outs/fragments.tsv.gz")
+# replace old fragment object
+Fragments(d53_ATAC) <- NULL
+Fragments(d53_ATAC) <- frags
+rm(frags)
+
+# call peaks
+macs2_peaks <- CallPeaks(
+  object = d53_ATAC,
+  macs2.path = "/Library/Frameworks/Python.framework/Versions/3.7/bin/macs2"
+)
+
+
+#
+macs2_counts = FeatureMatrix(Fragments(d53_ATAC)[[1]],
+  macs2_peaks)
+
+chrom_assay <- CreateChromatinAssay(
+  counts = macs2_counts,
+  sep = c("-", "-"),
+  genome = 'hg38',
+  fragments = "/Volumes/Data/Genomics/scATAC-seq/scATAC_10_16_2020/SCA6_d53_Macs2_reanalysis/outs/fragments.tsv.gz",
+  min.cells = 10,
+  min.features = 200
+)
+
+d53_ATAC <- CreateSeuratObject(
+  counts = chrom_assay,
+  assay = "peaks",
+  meta.data = d53_ATAC@meta.data
+)
+
+
+saveRDS(d53_ATAC, "d53_scATAC_macs2.Rds")
+```
+
+#peak assignments (I don't think this is the best way to do this) we should check with GREAT and other tools
+```{r}
+#issues here
+d53_ATAC = readRDS("d53_scATAC_macs2.Rds")
+
+frags <- Fragments(d53_ATAC)[[1]] # assuming there's only one fragment object in the assay
+frags <- UpdatePath(frags, "R:/Genomics/scATAC-seq/scATAC_10_16_2020/SCA6_d53_Macs2_reanalysis/outs/fragments.tsv.gz")
+# replace old fragment object
+Fragments(d53_ATAC) <- NULL
+Fragments(d53_ATAC) <- frags
+rm(frags)
+
+#https://uswest.ensembl.org/info/website/archives/assembly.html
+# extract gene annotations from EnsDb
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86)
+
+# change to UCSC style since the data was mapped to hg19
+seqlevelsStyle(annotations) <- 'UCSC'
+genome(annotations) <- "hg38"
+
+# add the gene information to the object
+Annotation(d53_ATAC) <- annotations
+```
+
+## QC
+```{r}
+# compute nucleosome signal score per cell
+d53_ATAC <- NucleosomeSignal(object = d53_ATAC)
+
+# compute TSS enrichment score per cell
+d53_ATAC <- TSSEnrichment(object = d53_ATAC, fast = FALSE)
+
+# add blacklist ratio and fraction of reads in peaks
+d53_ATAC$pct_reads_in_peaks <- d53_ATAC$peak_region_fragments / d53_ATAC$passed_filters * 100
+d53_ATAC$blacklist_ratio <- d53_ATAC$blacklist_region_fragments / d53_ATAC$peak_region_fragments
+
+d53_ATAC$high.tss <- ifelse(d53_ATAC$TSS.enrichment > 2, 'High', 'Low')
+TSSPlot(d53_ATAC, group.by = 'high.tss') + NoLegend()
+
+d53_ATAC$nucleosome_group <- ifelse(d53_ATAC$nucleosome_signal > 4, 'NS > 4', 'NS < 4')
+FragmentHistogram(object = d53_ATAC, group.by = 'nucleosome_group')
+```
+
+```{r fig.width=20}
+# d53_ATAC@meta.data[!is.na(d53_ATAC$peak_region_fragments),]
+# 
+# hist(d53_ATAC$peak_region_fragments, breaks = seq(0, max(d53_ATAC$peak_region_fragments) + 1000, by = 1000))
+# hist(d53_ATAC$pct_reads_in_peaks, breaks = seq(0, 100, by = 5))
+
+VlnPlot(
+  object = d53_ATAC,
+  features = c('pct_reads_in_peaks', 'peak_region_fragments',
+               'TSS.enrichment', 'blacklist_ratio', 'nucleosome_signal'),
+  pt.size = 0.1,
+  ncol = 5
+)
+```
+
+```{r}
+d53_ATAC_sub <- subset(
+  x = d53_ATAC,
+  subset = peak_region_fragments > 1000 &
+    peak_region_fragments < 20000 &
+    pct_reads_in_peaks > 15 &
+    blacklist_ratio < 0.05
+)
+# VlnPlot(
+#   object = d53_ATAC,
+#   features = c('pct_reads_in_peaks', 'peak_region_fragments',
+#                'TSS.enrichment', 'blacklist_ratio', 'nucleosome_signal'),
+#   pt.size = 0.1,
+#   ncol = 5
+# )
+```
+
+## Normalization
+```{r}
+d53_ATAC_sub <- RunTFIDF(d53_ATAC_sub)
+d53_ATAC_sub <- FindTopFeatures(d53_ATAC_sub, min.cutoff = 'q0')
+d53_ATAC_sub <- RunSVD(d53_ATAC_sub, n = 100)
+
+DepthCor(d53_ATAC_sub, n = 100)
+ElbowPlot(d53_ATAC_sub, ndims = 100, reduction = "lsi")
+```
+
+```{r}
+d53_ATAC_sub <- RunUMAP(object = d53_ATAC_sub, reduction = 'lsi', dims = 2:30)#, n.neighbors = 1000)
+d53_ATAC_sub <- FindNeighbors(object = d53_ATAC_sub, reduction = 'lsi', dims = 2:30)
+d53_ATAC_sub <- FindClusters(object = d53_ATAC_sub, verbose = FALSE, algorithm = 3)
+DimPlot(object = d53_ATAC_sub, label = TRUE) + NoLegend()
+```
+
+# This creates pseudo-gene activity by promoter acessablilty, not good for all peak to gene assignments
+```{r}
+gene.activities <- GeneActivity(d53_ATAC_sub)
+
+# add the gene activity matrix to the Seurat object as a new assay and normalize it
+d53_ATAC_sub[['RNA']] <- CreateAssayObject(counts = gene.activities)
+d53_ATAC_sub <- NormalizeData(
+  object = d53_ATAC_sub,
+  assay = 'RNA',
+  normalization.method = 'LogNormalize',
+  scale.factor = median(d53_ATAC_sub$nCount_RNA)
+)
+
+DefaultAssay(d53_ATAC_sub) = "RNA"
+FeaturePlot(d53_ATAC_sub, c("CRX", "OTX2", "RCVRN"))
+```
+
+
+
+## Adding motifs
+
+# establishing motif similarity measurements
+```{r}
+pfm_2020 = readJASPARMatrix(paste0("R:", "/Genomics/scATAC-seq/Marcus and Connor/jaspar2020_vert_motifs.txt"), matrixClass= "PFM")
+
+
+pwm_2020 = toPWM(pfm_2020, "prob")
+
+
+#https://bioconductor.riken.jp/packages/3.1/bioc/manuals/TFBSTools/man/TFBSTools.pdf
+# PWMSimilarity(pwm_2020, pwm_2020[[1]], method = "Euclidean")
+length(pwm_2020)
+
+Sim_mtx = matrix(nrow = length(pwm_2020), ncol = length(pwm_2020))
+
+for (i in 1:length(pwm_2020)){
+  sim_scores = PWMSimilarity(pwm_2020, pwm_2020[[i]], method = "Euclidean")
+  Sim_mtx[i,] = sim_scores
+}
+colnames(Sim_mtx) = names(pwm_2020)
+rownames(Sim_mtx) = names(pwm_2020)
+
+pheatmap(Sim_mtx)
+```
+
+```{r}
+DefaultAssay(d53_ATAC_sub) = "peaks"
+
+d53_ATAC_sub <- AddMotifs(
+  object = d53_ATAC_sub,
+  genome = BSgenome.Hsapiens.UCSC.hg38,
+  pfm = pfm_2020
+)
+
+d53_ATAC_sub@assays$peaks@motifs
+```
+
+## addtionaonally we will run Chromvar which shows global motif patterns, but has weaknesses due to use of Z-score
+```{r}
+d53_ATAC_sub <- RunChromVAR(
+  object = d53_ATAC_sub,
+  genome = BSgenome.Hsapiens.UCSC.hg38
+)
+
+
+
+names(pwm_2020)[grepl("Pou", names(pwm_2020), ignore.case = T)]
+
+
+DefaultAssay(d53_ATAC_sub) <- 'chromvar'
+# look at the activity of Mef2c
+FeaturePlot(
+  object = d53_ATAC_sub,
+  features = c("POU3F4", "ONECUT1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+```
+
+```{r}
+d53_mtx <- d53_ATAC_sub@assays$peaks@counts
+d53_mtx[d53_mtx > 0] = 1
+
+cellinfo <- d53_ATAC_sub@meta.data
+
+peakinfo = data.frame(stringr::str_split_fixed(rownames(d53_mtx), pattern = "-", n = 3))
+names(peakinfo) <- c("chr", "bp1", "bp2")
+peakinfo$site_name <- paste(peakinfo$chr, peakinfo$bp1, peakinfo$bp2, sep="-")
+row.names(peakinfo) <- peakinfo$site_name
+
+dim(d53_mtx)
+dim(peakinfo)
+length(rownames(d53_mtx))
+```
+
+
+```{r}
+d53_cds <-  suppressWarnings(new_cell_data_set(d53_mtx,
+cell_metadata = cellinfo,
+gene_metadata = peakinfo))
+
+d53_cds <- detect_genes(d53_cds)
+d53_cds <- estimate_size_factors(d53_cds)
+d53_cds <- preprocess_cds(d53_cds, method = "LSI")
+d53_cds <- reduce_dimension(d53_cds, reduction_method = 'UMAP', 
+                              preprocess_method = "LSI")
+
+
+
+d53_cds = cluster_cells(d53_cds)
+d53_cds = learn_graph(d53_cds)
+d53_cds = order_cells(d53_cds)
+
+d53_cds_3d <- reduce_dimension(d53_cds, reduction_method = 'UMAP', 
+                              preprocess_method = "LSI", max_components = 3)
+d53_cds_3d = cluster_cells(d53_cds_3d)
+d53_cds_3d = learn_graph(d53_cds_3d)
+order_cells(d53_cds_3d)
+
+plot_cells(d53_cds)
+plot_cells_3d(d53_cds_3d)
+
+pseudotime(d53_cds)
+
+
+
+saveRDS(d53_cds, "d53_cds.Rds")
+d53_cds = readRDS("d53_cds.Rds")
+```
+
+
+
+```{r}
+saveRDS(d53_ATAC_sub, "d53_scATAC.Rds")
+d53_ATAC_sub = readRDS("d53_scATAC.Rds")
+```
+

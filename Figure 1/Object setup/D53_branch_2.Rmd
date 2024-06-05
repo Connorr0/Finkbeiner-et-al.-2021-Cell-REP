@@ -1,0 +1,182 @@
+---
+title: "Untitled"
+author: "Connor Finkbeiner"
+date: "3/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Signac)
+library(Seurat)
+library(SeuratWrappers)
+library(monocle3)
+library(Matrix)
+library(ggplot2)
+library(patchwork)
+library(plotly)
+
+
+server_path = "R:"
+
+
+set.seed(1234)
+```
+
+```{r}
+server_path = "R:"
+d53_ATAC = readRDS(paste0(server_path,"/People Folders/Connor/Human scATAC/D53 (fetal)/d53_ATAC_sub_branches.RDS"))
+```
+
+## loading the data into Monocle
+
+```{r}
+d53_ATAC.cds <- as.cell_data_set(d53_ATAC)
+d53_ATAC.cds <- cluster_cells(cds = d53_ATAC.cds, reduction_method = "UMAP")
+
+# I needed to adjust parameters to get the photoreceptors and AC out. This makes the graph look messier, but shouldn't cause any real issues.
+d53_ATAC.cds <- learn_graph(d53_ATAC.cds, use_partition = TRUE, 
+                                learn_graph_control = list(prune_graph = F, minimal_branch_len = 5))
+
+# view the trajectory graph
+plot_cells(d53_ATAC.cds, color_cells_by = "type")
+```
+
+```{r}
+# This is the first interactive peice I can't get these to work in the markdown. I had to save out an existing object with all of this done to it already. We already have that object loaded in.
+
+
+d53_ATAC.cds <- order_cells(d53_ATAC.cds, reduction_method = "UMAP")
+```
+
+```{r}
+# d53_ATAC$pseudotime = pseudotime(d53_ATAC.cds)
+# 
+# FeaturePlot(d53_ATAC, "pseudotime") + viridis::scale_color_viridis()
+# 
+# FeaturePlot(d53_ATAC, "pseudotime", min.cutoff = .5, max.cutoff = 10)
+```
+
+
+# get linages
+I can also get branches now. Unfortunately because this is interactive, I have to save out the results so you can see them, and can't run it in the markdown. There is a good illustation of this on the monocle 3 github.
+
+```{r}
+# d53_ATAC.RGC <- choose_graph_segments(d53_ATAC.cds)
+# rgc_cells = colnames(d53_ATAC.RGC)
+# 
+# rm(d53_ATAC.RGC)
+```
+
+```{r}
+# d53_ATAC.AC <- choose_graph_segments(d53_ATAC.cds)
+# AC_cells = colnames(d53_ATAC.AC)
+# 
+# rm(d53_ATAC.AC)
+```
+
+```{r}
+# d53_ATAC.Photo <- choose_graph_segments(d53_ATAC.cds)
+# Photo_cells = colnames(d53_ATAC.Photo)
+# 
+# rm(d53_ATAC.Photo)
+```
+
+
+## viewing branches
+
+```{r}
+# d53_ATAC$branch = "not assigned"
+# 
+# d53_ATAC@meta.data[rgc_cells, "branch"] = "RGC"
+# 
+# d53_ATAC$RGC_branch = 0
+# d53_ATAC@meta.data[rgc_cells, "RGC_branch"] = 1
+# d53_ATAC@meta.data[rgc_cells, "branch"] = "RGC"
+# 
+# d53_ATAC$AC_branch = 0
+# d53_ATAC@meta.data[AC_cells, "AC_branch"] = 1
+# d53_ATAC@meta.data[AC_cells, "branch"] = "AC"
+# 
+# d53_ATAC$Photo_branch = 0
+# d53_ATAC@meta.data[Photo_cells, "Photo_branch"] = 1
+# d53_ATAC@meta.data[Photo_cells, "branch"] = "Photo"
+# 
+# 
+# d53_ATAC@meta.data[intersect(Photo_cells, AC_cells), "branch"] = "Photo/AC"
+# d53_ATAC@meta.data[d53_ATAC$pseudotime < 1.6, "branch"] = "T0"
+# saveRDS(d53_ATAC, "d53_ATAC_branches2.RDS")
+# d53_ATAC = readRDS("d53_ATAC_branches2.RDS")
+# 
+d53_ATAC$branch = dplyr::recode(d53_ATAC$branch,
+                                "not assigned" = "Progenitors")
+
+
+d53_ATAC$branch = factor(d53_ATAC$branch, levels = c("Progenitors", "T0", "RGC", "Photo/AC", "AC", "Photo"))
+
+unique(d53_ATAC$branch)
+
+DimPlot(d53_ATAC, group.by = "branch") #+ NoAxes()
+
+unique(d53_ATAC$type)
+d53_ATAC$type = factor(d53_ATAC$type, levels = c("Progenitors", "T0", 'Unknown RGC', "RGC", "UNK_RGC", "T2", "AC", "Cones", "unk"))
+
+
+DimPlot(d53_ATAC, group.by = "type")
+
+FeaturePlot(d53_ATAC, "RGC_branch", cols = c("grey80", scales::hue_pal()(9)[4]))
+FeaturePlot(d53_ATAC, "AC_branch", cols = c("grey80", scales::hue_pal()(9)[7]))
+FeaturePlot(d53_ATAC, "Photo_branch", cols = c("grey80", scales::hue_pal()(9)[8]))
+
+saveRDS(d53_ATAC, paste0(server_path,"/People Folders/Connor/Human scATAC/D53 (fetal)/d53_ATAC_branches2.RDS"))
+```
+
+```{r}
+d53_ATAC_3d = RunUMAP(d53_ATAC, dims = 1:20, n.components = 3, reduction = "lsi")
+
+d53_ATAC_3d_frame = d53_ATAC_3d@meta.data
+
+d53_ATAC_3d_frame = cbind(d53_ATAC_3d_frame, d53_ATAC_3d@reductions$umap@cell.embeddings)
+
+plot_ly(d53_ATAC_3d_frame, 
+        x = ~UMAP_1, 
+        y = ~UMAP_2, 
+        z = ~UMAP_3, 
+        color = ~branch, 
+        size = 1)
+```
+
+```{r}
+# 4x12
+Idents(d53_ATAC) = d53_ATAC$type
+ggsave(plot = CoveragePlot(d53_ATAC, "CCND1", extend.downstream = 5000, extend.upstream = 5000), filename = "Coverage plots/Ccnd1_cov.pdf", width = 4, height = 6)
+
+ggsave(plot = CoveragePlot(d53_ATAC, "ATOH7", extend.downstream = 5000, extend.upstream = 5000), filename = "Coverage plots/Atoh7_cov.pdf", width = 4, height = 6)
+       
+ggsave(plot = CoveragePlot(d53_ATAC, "CRX", extend.downstream = 5000, extend.upstream = 5000), filename = "Coverage plots/Crx_cov.pdf", width = 4, height = 6)
+
+ggsave(plot = CoveragePlot(d53_ATAC, "OTX2", extend.downstream = 5000, extend.upstream = 5000), filename = "Coverage plots/Otx2_cov.pdf", width = 4, height = 6)
+
+ggsave(plot = CoveragePlot(d53_ATAC, "POU4F2", extend.downstream = 5000, extend.upstream = 5000), filename = "Coverage plots/Pou4f2_cov.pdf", width = 4, height = 6)
+
+
+ggsave(plot = CoveragePlot(d53_ATAC, "GAP43", extend.downstream = 5000, extend.upstream = 5000), filename = "Coverage plots/Gap43_cov.pdf", width = 4, height = 6)
+       
+ggsave(plot = CoveragePlot(d53_ATAC, "TFAP2A", extend.downstream = 5000, extend.upstream = 5000), filename = "Coverage plots/Tfap2a_cov.pdf", width = 4, height = 6)
+
+ggsave(plot = CoveragePlot(d53_ATAC, "PRDM13", extend.downstream = 5000, extend.upstream = 5000), filename = "Coverage plots/Prdm13_cov.pdf", width = 4, height = 6)
+```
+
+```{r}
+DefaultAssay(d53_ATAC) = "chromvar"
+
+FeaturePlot(d53_ATAC, "ATOH7", min.cutoff = 0, max.cutoff = 2)
+FeaturePlot(d53_ATAC, "NEUROD1", min.cutoff = 0, max.cutoff = 2)
+FeaturePlot(d53_ATAC, "POU4F2", min.cutoff = 0, max.cutoff = 2)
+FeaturePlot(d53_ATAC, "OTX2", min.cutoff = 0, max.cutoff = 2)
+FeaturePlot(d53_ATAC, "TFAP2A", min.cutoff = 0, max.cutoff = 2)
+```
+

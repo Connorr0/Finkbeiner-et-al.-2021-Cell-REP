@@ -1,0 +1,302 @@
+---
+title: "Untitled"
+author: "Connor Finkbeiner"
+date: "11/20/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Seurat)
+library(Signac)
+library(dplyr)
+library(GenomeInfoDb)
+library(EnsDb.Hsapiens.v75)
+library(ggplot2)
+library(patchwork)
+library(TFBSTools)
+library(viridis)
+library(stringr)
+library(pheatmap)
+library(BSgenome.Hsapiens.UCSC.hg38)
+# library(monocle3)
+# library(cicero)
+library(stringr)
+
+
+server_path = "R:"
+
+
+set.seed(1234)
+```
+
+```{r}
+d53_ATAC = readRDS(paste0(server_path,"/People Folders/Connor/Human scATAC/D53 (fetal)/d53_scATAC.Rds"))
+```
+
+```{r}
+#change fragment path for mac
+DefaultAssay(d53_ATAC) = "peaks"
+
+frags <- Fragments(d53_ATAC)[[1]] # assuming there's only one fragment object in the assay
+frags <- UpdatePath(frags, paste0(server_path, "/Genomics/scATAC-seq/scATAC_10_16_2020/SCA6_d53_Macs2_reanalysis/outs/fragments.tsv.gz"))
+# replace old fragment object
+Fragments(d53_ATAC) <- NULL
+Fragments(d53_ATAC) <- frags
+rm(frags)
+```
+
+
+```{r}
+plotly::ggplotly(DimPlot(d53_ATAC))
+
+
+d53_ATAC$type = dplyr::recode(d53_ATAC$seurat_clusters,
+              `0` = "Progenitors", #assumed from shape
+              `1` = "Progenitors", #assumed from shape
+              `2` = "Progenitors", #assumed from shape
+              `3` = "RGC transition", #location/Pou motif
+              `4` = "RGC", #Pou motif
+              `5` = "T0", #assumed from shape, Atoh
+              `6` = "UNK_RGC", #from earlier investigation, want to reverify
+              `7` = "AC", #Onecut tfap2a time?
+              `8` = "Cones", #Crx Otx motif
+              `9` = "T2", #Onecut tfap2a
+              `10` = "UNK_RGC", #from earlier investigation, want to reverify
+              `11` = "UNK_RGC", #from earlier investigation, want to reverify
+              `12` = "UNK_RGC", #from earlier investigation, want to reverify
+              `13` = "unk"
+              )
+# 
+# Idents(d53_ATAC) = d53_ATAC$type
+# 
+# 
+# d53_ATAC@meta.data
+plotly::ggplotly(DimPlot(d53_ATAC, group.by = "type"))
+```
+
+```{r fig.asp = 1}
+DefaultAssay(d53_ATAC) = "peaks"
+
+CoveragePlot(
+  object = d53_ATAC,
+  region = "OTX2", 
+  extend.upstream = 500, 
+  extend.downstream = 500
+)
+
+
+
+CoveragePlot(
+  object = d53_ATAC,
+  region = "CRX", 
+  extend.upstream = 10000, 
+  extend.downstream = 10000
+)
+
+
+
+CoveragePlot(
+  object = d53_ATAC,
+  region = "NEUROD1", 
+  extend.upstream = 10000, 
+  extend.downstream = 10000
+)
+
+
+
+CoveragePlot(
+  object = d53_ATAC,
+  region = "GAP43", 
+  extend.upstream = 10000, 
+  extend.downstream = 10000
+)
+
+CoveragePlot(
+  object = d53_ATAC,
+  region = "PRDM16", 
+  extend.upstream = 10000, 
+  extend.downstream = 10000
+)
+```
+
+
+```{r}
+DefaultAssay(d53_ATAC) = "peaks"
+
+mk = FindAllMarkers(d53_ATAC, only.pos = T)
+
+mk
+
+table(mk$cluster)
+```
+
+```{r}
+for (clus in unique(mk$cluster)){
+  print(clus)
+  
+  clus_mk = mk[mk$cluster == clus & mk$p_val < .05,]
+  colnames(clus_mk)[length(colnames(clus_mk))] = "query_region"
+  clus_mk_gene <- ClosestFeature(d53_ATAC, regions = clus_mk$query_region, sep = c("-", "-"))
+
+  clus_mk_gene = merge(clus_mk, clus_mk_gene, by = "query_region")
+  clus_mk_gene = clus_mk_gene[order(clus_mk_gene$avg_log2FC, decreasing = F),]
+
+  write.csv(clus_mk_gene, file = paste0(clus, "_cluster_WX.csv"))
+  
+  
+  bed = clus_mk[clus_mk$avg_log2FC > 0 &
+                       clus_mk$p_val < .05,]
+  
+  bed = data.frame(str_split_fixed(bed$query_region, pattern = "[-]", n = 3))
+  
+  
+  
+  
+  write.table(bed, file = paste0(clus, "_cluster_WX.bed"), quote = F, row.names = F, col.names = F)
+}
+
+ClosestFeature(d53_ATAC, "chr22-38691485-38691806")
+FeaturePlot(d53_ATAC, "chr14-56797845-56798602")
+```
+
+```{r fig.width=13}
+DefaultAssay(d53_ATAC) = "RNA"
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("PRDM13", "SLIT1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("EPHB1", "ISL2"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T)
+
+
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("POU4F2", "POU4F1", "POU4F3"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T)
+```
+
+
+```{r}
+DefaultAssay(d53_ATAC) = "chromvar"
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("ATOH7", "ASCL1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("POU4F2", "POU4F1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("Crx", "OTX2"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("ONECUT1", "ONECUT2"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("VSX1", "Lhx4"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("NRL", "Nr2e3"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("Ptf1a", "Ptf1a(var.2)", "Ptf1a(var.3)"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("TFAP2A", "TFAP2A(var.2)", "TFAP2A(var.3)"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("PROX1", "LHX1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC,
+  features = c("PROX1", "LHX1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+```
+
+```{r}
+#DefaultAssay(d53_ATAC) = "peaks"
+FeaturePlot(
+  object = d53_ATAC,
+  features = "nCount_peaks",
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+```
+

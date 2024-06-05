@@ -1,0 +1,217 @@
+---
+title: "Untitled"
+author: "Connor Finkbeiner"
+date: "4/9/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# libraries
+
+```{r}
+library(Seurat)
+library(Signac)
+library(dplyr)
+library(stringr)
+library(pheatmap)
+library(plotly)
+library(Matrix)
+library(RColorBrewer)
+#library(BSgenome.Hsapiens.UCSC.hg38)
+
+server_path = "X:"
+
+source(paste0(server_path, "/People Folders/Connor/R_functions/CoveragePlots.R"))
+source(paste0(server_path, "/People Folders/Connor/R_functions/motif_intersect.R"))
+```
+
+```{r}
+colors <- read.csv("X:/Publications/Human_scATAC_2021/colors_final.csv", encoding="UTF-8", header=FALSE)
+colors[1,1] = "MPC"
+
+rownames(colors) = colors$V1
+
+colors
+```
+
+```{r}
+d53_ATAC = readRDS("d53_ATAC_no_unk_branches.RDS")
+
+DimPlot(d53_ATAC, group.by = "branch")
+DimPlot(d53_ATAC, group.by = "short_type")
+
+d53_ATAC$short_type_low_res = d53_ATAC$short_type
+```
+
+```{r}
+d53_ATAC <- FindClusters(object = d53_ATAC, verbose = FALSE, algorithm = 3, resolution = 1.8)
+
+ggplotly(DimPlot(d53_ATAC))
+```
+
+```{r}
+d53_ATAC$short_type = recode(d53_ATAC$peaks_snn_res.1.8,
+                             `0` = "MPC",
+                             `1` = "MPC",
+                             `2` = "RGC",
+                             `3` = "MPC",
+                             `4` = "Npre",
+                             `5` = "RGCpre",
+                             `6` = "MPC",
+                             `7` = "RGC",
+                             `8` = "HOR",
+                             `9` = "MPC",
+                             `10` = "CON",
+                             `11` = "H/Apre",
+                             `12` = "MPC",
+                             `13` = "RGC",
+                             `14` = "RGC",
+                             `15` = "RGC",
+                             `16` = "RGC",
+                             `17` = "RGCpre",
+                             `18` = "RGCpre",
+                             `19` = "P/Bpre")
+
+d53_ATAC$short_type = factor(d53_ATAC$short_type, levels = intersect(colors$V1, unique(d53_ATAC$short_type)))
+
+
+table(d53_ATAC$short_type, d53_ATAC$short_type_low_res)
+```
+
+```{r}
+Idents(d53_ATAC) = "short_type"
+DimPlot(d53_ATAC, cols = colors[levels(d53_ATAC$short_type), "V2"])
+```
+
+```{r}
+gn_lst = c("OTX2", "ATOH7", "ASCL1", "VSX1", "VSX2", "CCND1", "RCVRN", "RHO", "POU4F3", "TRPM1", "PRDM1", "PRDM13", "PVALB", "FOXN4", "FOXM1", "PTF1A", "TFAP2A", "ONECUT1", "ARR3", "RXRG", "OPN1SW", "NR2E3", "SOX2", "GRM6", "CABP5", "POU4F2", "POU4F1", "ISL1", "PROX1", "FGF19", "FGF3", "OLIG2", "NEUROD1", "CRX")
+
+DefaultAssay(d53_ATAC) = "peaks"
+Idents(d53_ATAC) = d53_ATAC$short_type
+
+col = c()
+for (i in levels(Idents(d53_ATAC))){
+  col = c("grey30", col)
+}
+
+for (g in gn_lst){
+  print(g)
+  cov = CoveragePlot(
+          object = d53_ATAC,
+          region = g, 
+          extend.upstream = 10000, 
+          extend.downstream = 10000 
+        )
+  
+  cov_gr = cov & scale_fill_manual(values = col)
+  
+  # ggsave(plot = cov, filename = paste0("X:/Publications/Human_scATAC_2021/Figure 1 D53 Fetal/plots_update_6_2021/Coverage Plots/letter_plots/", g, "_cov.pdf"), height = 8, width = 11)
+  
+  # ggsave(plot = cov_gr, filename = paste0("X:/Publications/Human_scATAC_2021/Figure 1 D53 Fetal/plots_update_6_2021/Coverage Plots/skinny_plots/", g, "_cov.pdf"), height = 8, width = 4)
+  
+  
+  
+  ggsave(plot = cov_gr, filename = paste0("X:/Publications/Human_scATAC_2021/Pre-sub Figures and Panels/Figure1 (D53 Fetal)/Plots_updated_8_11_(Cone_pre clustered)/Coverage Plots/letter_plots/", g, "_cov_gr.pdf"), height = 8, width = 11)
+  
+  ggsave(plot = cov_gr, filename = paste0("X:/Publications/Human_scATAC_2021/Pre-sub Figures and Panels/Figure1 (D53 Fetal)/Plots_updated_8_11_(Cone_pre clustered)/Coverage Plots/skinny_plots/", g, "_cov_gr.pdf"), height = 8, width = 4)
+  
+  rm(cov)
+}
+```
+
+```{r fig.width=20}
+CoveragePlot(d53_ATAC, 
+             "CCND1",
+          extend.upstream = 10000, 
+          extend.downstream = 10000, region.highlight = StringToGRanges("chr11-69657608-69658693"))
+
+FeaturePlot(d53_ATAC, "chr11-69657608-69658693")
+
+guess_enhancers(d53_ATAC, "CCND1",
+          extend.upstream = 10000, 
+          extend.downstream = 10000, cuttoff_pct = 0)
+```
+
+
+```{r}
+# saveRDS(d53_ATAC, "d53_ATAC_branches_high_res.RDS")
+d53_ATAC = readRDS("d53_ATAC_no_unk_branches_high_res.RDS")
+
+# write.csv(d53_ATAC@meta.data, "X:/Publications/Human_scATAC_2021/GEO_submission/8_31/metadata/d53_fetal_metadata.csv")
+# 
+# Matrix::writeMM(d53_ATAC[["peaks"]]@data, "X:/Publications/Human_scATAC_2021/GEO_submission/8_31/macs2 matricies/d53_fetal_Macs2_TFIDF.mtx")
+```
+
+```{r}
+FeaturePlot(d53_ATAC, features = "chr10-68233255-68233641", slot = "counts", max.cutoff = 1, order = T, pt.size = 2)
+FeaturePlot(d53_ATAC, features = "chr10-23191863-23193139", slot = "counts", max.cutoff = 1, order = T, pt.size = 2)
+FeaturePlot(d53_ATAC, features = "chr19-47848650-47849223", slot = "counts", max.cutoff = 1, order = T, pt.size = 2)
+FeaturePlot(d53_ATAC, features = "chr4-146637674-146639350", slot = "counts", max.cutoff = 1, order = T, pt.size = 2)
+FeaturePlot(d53_ATAC, features = "chr11-69744476-69745005", slot = "counts", max.cutoff = 1, order = T, pt.size = 2)
+FeaturePlot(d53_ATAC, features = "chr13-78605198-78605538", slot = "counts", max.cutoff = 1, order = T, pt.size = 2)
+```
+
+```{r}
+pk = c("chr10-68233255-68233641", "chr10-23191863-23193139",
+       "chr19-47848650-47849223", #"chr4-146637674-146639350",
+       "chr11-69744476-69745005", "chr13-78605198-78605538")
+
+gn = c("ATOH7", "PTF1A",
+       "CRX", #"POU4F2",
+       "CCND1", "POU4F1")
+
+cl = c("Npre", "HOR",
+       "CON", #"RGC",
+       "MPC", "RGC")
+
+DefaultAssay(d53_ATAC) = "peaks"
+
+for (p in 1:length(pk)){
+  
+  pf = FeaturePlot(d53_ATAC, 
+                   features = pk[p], 
+                   slot = "counts", 
+                   max.cutoff = 1, 
+                   order = T, 
+                   pt.size = 2)
+  
+  pf_cl = FeaturePlot(d53_ATAC, 
+                   features = pk[p], 
+                   slot = "counts", 
+                   max.cutoff = 1, 
+                   order = T, 
+                   pt.size = 2, 
+                   cols = c("grey", colors[cl[p], "V2"]))
+  print(gn[p])
+  p_cv = CoveragePlot(d53_ATAC,
+                      gn[p], 
+                      extend.upstream = 100000, 
+                      extend.downstream = 100000, 
+                      region.highlight = StringToGRanges(pk[p]), 
+                      downsample.rate = 1) & scale_fill_manual(values = c("black", "black",
+                                                                               "black", "black",
+                                                                               "black", "black",
+                                                                               "black", "black"))
+  
+  ggsave(paste0("X:/Publications/Human_scATAC_2021/Pre-sub Figures and Panels/Figure1 (D53 Fetal)/Plots_updated_8_11_(Cone_pre clustered)/featurePpeaks/8_18_update/", gn[p], "_peak_feat.pdf"), 
+         pf, 
+         width = 8, 
+         height = 6)
+  
+  ggsave(paste0("X:/Publications/Human_scATAC_2021/Pre-sub Figures and Panels/Figure1 (D53 Fetal)/Plots_updated_8_11_(Cone_pre clustered)/featurePpeaks/8_18_update/", gn[p], "_peak_feat_colored.pdf"), 
+         pf_cl, 
+         width = 8, 
+         height = 6) 
+  
+  ggsave(paste0("X:/Publications/Human_scATAC_2021/Pre-sub Figures and Panels/Figure1 (D53 Fetal)/Plots_updated_8_11_(Cone_pre clustered)/featurePpeaks/8_18_update/", gn[p], "_peak_coverage.pdf"), 
+         p_cv, 
+         width = 10, 
+         height = 10) 
+}
+```
+
+
+

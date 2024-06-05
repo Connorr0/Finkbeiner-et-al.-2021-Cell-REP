@@ -1,0 +1,213 @@
+---
+title: "d53_cleanup"
+author: "Connor Finkbeiner"
+date: "4/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Seurat)
+library(Signac)
+library(dplyr)
+library(GenomeInfoDb)
+#library(EnsDb.Hsapiens.v75)
+library(ggplot2)
+library(patchwork)
+#library(TFBSTools)
+library(viridis)
+library(stringr)
+library(pheatmap)
+library(BSgenome.Hsapiens.UCSC.hg38)
+# library(monocle3)
+# library(cicero)
+library(stringr)
+
+
+server_path = "X:"
+
+
+set.seed(1234)
+```
+
+```{r}
+d53_ATAC = readRDS(paste0(server_path,"/People Folders/Connor/Human scATAC/D53 (fetal)/d53_ATAC_branches2.RDS"))
+```
+
+```{r}
+DimPlot(d53_ATAC)
+d53_ATAC_no_unk = subset(d53_ATAC, idents="unk", invert=TRUE)
+saveRDS(d53_ATAC_no_unk, paste0(server_path,"/People Folders/Connor/Human scATAC/D53 (fetal)/d53_ATAC_no_unk.RDS"))
+
+d53_ATAC_no_unk <- RunTFIDF(d53_ATAC_no_unk)
+d53_ATAC_no_unk <- FindTopFeatures(d53_ATAC_no_unk, min.cutoff = 'q0')
+d53_ATAC_no_unk <- RunSVD(d53_ATAC_no_unk, n = 100)
+
+DepthCor(d53_ATAC_no_unk, n = 100)
+ElbowPlot(d53_ATAC_no_unk, ndims = 100, reduction = "lsi")
+
+d53_ATAC_no_unk <- RunUMAP(object = d53_ATAC_no_unk, reduction = 'lsi', dims = 2:30)#, n.neighbors = 1000)
+d53_ATAC_no_unk <- FindNeighbors(object = d53_ATAC_no_unk, reduction = 'lsi', dims = 2:30)
+d53_ATAC_no_unk <- FindClusters(object = d53_ATAC_no_unk, verbose = FALSE, algorithm = 3, resolution = 2)
+
+DimPlot(object = d53_ATAC_no_unk, label = TRUE) + NoLegend()
+DimPlot(object = d53_ATAC_no_unk_old, label = TRUE) + NoLegend()
+
+
+
+saveRDS(d53_ATAC_no_unk, paste0(server_path,"/People Folders/Connor/Human scATAC/D53 (fetal)/d53_ATAC_no_unk.RDS"))
+
+d53_ATAC_no_unk = readRDS(paste0(server_path,"/People Folders/Connor/Human scATAC/D53 (fetal)/d53_ATAC_no_unk.RDS"))
+```
+
+```{r fig.width= = 1.4}
+DefaultAssay(d53_ATAC_no_unk) <- 'chromvar'
+# look at the activity of Mef2c
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("OTX2", "ATOH7"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("POU4F2", "ATOH7", "POU4F1", "ZIC3","ZIC1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("TBX20", "NR2F2", "NRF1", "HES1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("EOMES", "TBX21", "TBR1", "TBX2"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("SOX4", "EN1", "POU6F2", "EBF1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("EBF1", "NR2F2", "EOMES", "POU4F2"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("PAX6", "VSX2", "LHX1", "CTCF"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("Lhx3", "HNF1B", "HNF1A", "PRDM1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("TGIF1", "Ptf1a", "BHLHE23", "PBX2"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("ONECUT3", "Stat2", "FEV", "STAT1::STAT2"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+```
+
+
+```{r}
+DefaultAssay(d53_ATAC_no_unk) = "chromvar"
+
+Idents(d53_ATAC_no_unk) = d53_ATAC_no_unk$seurat_clusters
+rgc_mk = FindMarkers(d53_ATAC_no_unk, ident.1 = "9", ident.2 = "7", only.pos = T)
+d53_ATAC_no_unk@meta.data
+rgc_mk = rgc_mk[rgc_mk$p_val_adj < .05,]
+
+write.csv(rgc_mk, file="rgc_9vs7.csv")
+table(rgc_mk$avg_log2FC >0)
+```
+
+```{r}
+write.table(stringr::str_split_fixed(rownames(rgc_mk[rgc_mk$avg_log2FC > 0,]), pattern = "[-]", 3), quote = F, row.names = F, col.names = F, file = "RGC_fs_TFAP_RGC_53.bed")
+
+write.table(stringr::str_split_fixed(rownames(rgc_mk[rgc_mk$avg_log2FC < 0,]), pattern = "[-]", 3), quote = F, row.names = F, col.names = F, file = "TFAP_RGC_fs_RGC_53.bed")
+```
+
+```{r}
+DefaultAssay(d53_ATAC_no_unk) = "peaks"
+
+frags <- Fragments(d53_ATAC_no_unk)[[1]] # assuming there's only one fragment object in the assay
+frags <- UpdatePath(frags, paste0(server_path, "/Genomics/scATAC-seq/scATAC_10_16_2020/SCA6_d53_Macs2_reanalysis/outs/fragments.tsv.gz"))
+# replace old fragment object
+Fragments(d53_ATAC_no_unk) <- NULL
+Fragments(d53_ATAC_no_unk) <- frags
+rm(frags)
+```
+
+
+```{r}
+CoveragePlot(d53_ATAC_no_unk, region = "ATOH7", 
+             extend.upstream = 10000, extend.downstream = 10000, 
+             idents = c(14, 5, 15, 9, 18, 16))
+
+CoveragePlot(d53_ATAC_no_unk, region = "POU4F2", 
+             extend.upstream = 10000, extend.downstream = 10000, 
+             idents = c(14, 5, 15, 9, 18, 16))
+
+CoveragePlot(d53_ATAC_no_unk, region = "GAP43", 
+             extend.upstream = 10000, extend.downstream = 10000, 
+             idents = c(14, 5, 15, 9, 18, 16))
+
+CoveragePlot(d53_ATAC_no_unk, region = "ZIC3", 
+             extend.upstream = 10000, extend.downstream = 10000, 
+             idents = c(14, 5, 15, 9, 18, 16))
+```
+
+```{r}
+#temp save
+#d53_ATAC_no_unk_old = d53_ATAC_no_unk
+```
+

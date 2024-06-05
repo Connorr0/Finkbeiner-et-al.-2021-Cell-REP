@@ -1,0 +1,424 @@
+---
+title: "d53_cleanup"
+author: "Connor Finkbeiner"
+date: "4/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Seurat)
+library(Signac)
+library(dplyr)
+library(GenomeInfoDb)
+#library(EnsDb.Hsapiens.v75)
+library(ggplot2)
+library(patchwork)
+#library(TFBSTools)
+library(viridis)
+library(stringr)
+library(pheatmap)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(monocle3)
+# library(cicero)
+library(stringr)
+library(cowplot)
+library(monocle3)
+#library(cicero)
+library(SeuratWrappers)
+
+
+server_path = "R:"
+source(paste0(server_path, "/People Folders/Connor/R_functions/UMAP_params.R"))
+source(paste0(server_path, "/People Folders/Connor/R_functions/CoveragePlots.R"))
+
+set.seed(1234)
+```
+
+```{r}
+colors <- read.csv(paste0(server_path, "/Publications/Human_scATAC_2021/colors_final.csv"), encoding="UTF-8", header=FALSE)
+colors[1,1] = "MPC"
+
+rownames(colors) = colors$V1
+
+colors
+```
+
+
+```{r}
+d53_ATAC_no_unk = readRDS(paste0(server_path,"/People Folders/Connor/Human scATAC/D53 (fetal)/d53_ATAC_no_unk.RDS"))
+
+d53_ATAC_no_unk = RunUMAP(d53_ATAC_no_unk, dims = 2:30, n.neighbors = 100, min.dist = .5, reduction = "lsi")
+
+
+d53_ATAC_no_unk$type = recode(d53_ATAC_no_unk$type,
+                              "UNK_RGC" = "RGC", # by Pou coverage
+                              "T0" = "Transition",
+                              "AC" = "Horizontal",
+                              "RGC transition" = "Transition to RGC",
+                              "T2" = "Transition to AC-HC") 
+
+unique(d53_ATAC_no_unk$type)
+
+d53_ATAC_no_unk$short_type = recode(d53_ATAC_no_unk$type,
+                                    "Progenitors" = "MPC",
+                                    "Transition" = "Npre",
+                                    "Transition to RGC" = "RGCpre",
+                                    #"RGC",
+                                    "Transition to AC-HC" = "H/Apre",
+                                    "Horizontal" = "HOR",
+                                    "Cones" = "CON") 
+
+d53_ATAC_no_unk$type = factor(d53_ATAC_no_unk$type, levels = c("Progenitors", "Transition", "Transition to RGC", "RGC", "Transition to AC-HC", "Horizontal", "Cones"))
+
+
+d53_ATAC_no_unk$short_type = factor(d53_ATAC_no_unk$short_type, 
+                                    levels = c("MPC", "Npre",
+                                               "RGCpre", "RGC",
+                                               "H/Apre", "HOR",
+                                               "CON"))
+
+
+DimPlot(d53_ATAC_no_unk, group.by = "short_type", cols = colors[levels(d53_ATAC_no_unk$short_type), "V2"])
+```
+
+```{r fig.asp = 1, fig.width=20}
+pi = UMAP_test_square(d53_ATAC_no_unk, min_dist_range = c(.3, .5, .7), n.neighbors_range = c(50, 100, 500), pcs_range = 2:30, reduction = "lsi")
+pi
+```
+
+
+```{r fig.width= = 1.4}
+DefaultAssay(d53_ATAC_no_unk) <- 'chromvar'
+# look at the activity of Mef2c
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("OTX2", "ATOH7"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("POU4F2", "ATOH7", "POU4F1", "ZIC3","ZIC1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("TBX20", "NR2F2", "NRF1", "HES1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("EOMES", "TBX21", "TBR1", "TBX2"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("SOX4", "EN1", "POU6F2", "EBF1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("EBF1", "NR2F2", "EOMES", "POU4F2"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("PAX6", "VSX2", "LHX1", "CTCF"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("Lhx3", "HNF1B", "HNF1A", "PRDM1"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("TGIF1", "Ptf1a", "BHLHE23", "PBX2"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+
+
+FeaturePlot(
+  object = d53_ATAC_no_unk,
+  features = c("ONECUT3", "Stat2", "FEV", "STAT1::STAT2"),
+  min.cutoff = 'q10',
+  max.cutoff = 'q90',
+  pt.size = 0.1,
+  order = T
+)
+```
+
+
+```{r}
+DefaultAssay(d53_ATAC_no_unk) = "chromvar"
+
+Idents(d53_ATAC_no_unk) = d53_ATAC_no_unk$seurat_clusters
+rgc_mk = FindMarkers(d53_ATAC_no_unk, ident.1 = "9", ident.2 = "7", only.pos = T)
+d53_ATAC_no_unk@meta.data
+rgc_mk = rgc_mk[rgc_mk$p_val_adj < .05,]
+
+write.csv(rgc_mk, file="rgc_9vs7.csv")
+table(rgc_mk$avg_log2FC >0)
+```
+
+```{r}
+write.table(stringr::str_split_fixed(rownames(rgc_mk[rgc_mk$avg_log2FC > 0,]), pattern = "[-]", 3), quote = F, row.names = F, col.names = F, file = "RGC_fs_TFAP_RGC_53.bed")
+
+write.table(stringr::str_split_fixed(rownames(rgc_mk[rgc_mk$avg_log2FC < 0,]), pattern = "[-]", 3), quote = F, row.names = F, col.names = F, file = "TFAP_RGC_fs_RGC_53.bed")
+```
+
+```{r}
+DefaultAssay(d53_ATAC_no_unk) = "peaks"
+
+frags <- Fragments(d53_ATAC_no_unk)[[1]] # assuming there's only one fragment object in the assay
+frags <- UpdatePath(frags, paste0(server_path, "/Genomics/scATAC-seq/scATAC_10_16_2020/SCA6_d53_Macs2_reanalysis/outs/fragments.tsv.gz"))
+# replace old fragment object
+Fragments(d53_ATAC_no_unk) <- NULL
+Fragments(d53_ATAC_no_unk) <- frags
+rm(frags)
+```
+
+```{r}
+gn_lst = c("OTX2", "ATOH7", "ASCL1", "VSX1", "VSX2", "CCND1", "RCVRN", "RHO", "POU4F3", "TRPM1", "PRDM1", "PRDM13", "PVALB", "FOXN4", "FOXM1", "PTF1A", "TFAP2A", "ONECUT1", "ARR3", "RXRG", "OPN1SW", "NR2E3", "SOX2", "GRM6", "CABP5", "POU4F2", "POU4F1", "ISL1", "PROX1", "FGF19", "FGF3", "OLIG2", "NEUROD1")
+
+DefaultAssay(d53_ATAC_no_unk) = "peaks"
+Idents(d53_ATAC_no_unk) = d53_ATAC_no_unk$short_type
+
+col = c()
+for (i in levels(Idents(d53_ATAC_no_unk))){
+  col = c("grey30", col)
+}
+
+for (g in gn_lst){
+  print(g)
+  cov = CoveragePlot(
+          object = d53_ATAC_no_unk,
+          region = g, 
+          extend.upstream = 10000, 
+          extend.downstream = 10000
+        )
+  
+  cov_gr = cov + scale_fill_manual(values = col)
+  
+  # ggsave(plot = cov, filename = paste0("X:/Publications/Human_scATAC_2021/Figure 1 D53 Fetal/plots_update_6_2021/Coverage Plots/letter_plots/", g, "_cov.pdf"), height = 8, width = 11)
+  
+  # ggsave(plot = cov_gr, filename = paste0("X:/Publications/Human_scATAC_2021/Figure 1 D53 Fetal/plots_update_6_2021/Coverage Plots/skinny_plots/", g, "_cov.pdf"), height = 8, width = 4)
+  
+  
+  
+  ggsave(plot = cov_gr, filename = paste0("X:/Publications/Human_scATAC_2021/Figure 1 D53 Fetal/plots_update_6_2021/Coverage Plots/letter_plots/", g, "_cov_gr.pdf"), height = 8, width = 11)
+  
+  ggsave(plot = cov_gr, filename = paste0("X:/Publications/Human_scATAC_2021/Figure 1 D53 Fetal/plots_update_6_2021/Coverage Plots/skinny_plots/", g, "_cov_gr.pdf"), height = 8, width = 4)
+  
+  rm(cov)
+}
+```
+
+
+```{r fig.width=20}
+CoveragePlot(d53_ATAC_no_unk, region = "ATOH7", 
+             extend.upstream = 10000, extend.downstream = 10000, group.by = "type", 
+             cols = colors[levels(d53_ATAC_no_unk$short_type), "V2"])
+
+CoveragePlot(d53_ATAC_no_unk, region = "POU4F2", 
+             extend.upstream = 10000, extend.downstream = 10000, group.by = "type")
+
+CoveragePlot(d53_ATAC_no_unk, region = "POU4F2", 
+             extend.upstream = 10000, extend.downstream = 10000, group.by = "type")
+
+CoveragePlot(d53_ATAC_no_unk, region = "GAP43", 
+             extend.upstream = 10000, extend.downstream = 10000, group.by = "type")
+
+CoveragePlot(d53_ATAC_no_unk, region = "ZIC3", 
+             extend.upstream = 10000, extend.downstream = 10000, group.by = "type")
+
+CoveragePlot(d53_ATAC_no_unk, region = "ISL1", 
+             extend.upstream = 10000, extend.downstream = 10000, group.by = "type")
+```
+
+
+## loading the data into Monocle
+
+```{r}
+d53_ATAC_no_unk.cds <- as.cell_data_set(d53_ATAC_no_unk)
+d53_ATAC_no_unk.cds <- cluster_cells(cds = d53_ATAC_no_unk.cds, reduction_method = "UMAP")
+
+# I needed to adjust parameters to get the photoreceptors and AC out. This makes the graph look messier, but shouldn't cause any real issues.
+d53_ATAC_no_unk.cds <- learn_graph(d53_ATAC_no_unk.cds, use_partition = TRUE, 
+                                learn_graph_control = list(prune_graph = F, minimal_branch_len = 5))
+
+# view the trajectory graph
+plot_cells(d53_ATAC_no_unk.cds, color_cells_by = "type")
+```
+
+```{r}
+# This is the first interactive peice I can't get these to work in the markdown. I had to save out an existing object with all of this done to it already. We already have that object loaded in.
+
+d53_ATAC_no_unk.cds <- order_cells(d53_ATAC_no_unk.cds, reduction_method = "UMAP")
+
+d53_ATAC_no_unk$pseudotime = pseudotime(d53_ATAC_no_unk.cds)
+
+FeaturePlot(d53_ATAC_no_unk, "pseudotime") + viridis::scale_color_viridis()
+```
+
+
+
+
+# get linages
+I can also get branches now. Unfortunately because this is interactive, I have to save out the results so you can see them, and can't run it in the markdown. There is a good illustation of this on the monocle 3 github.
+
+```{r}
+d53_ATAC_no_unk.Cones <- choose_graph_segments(d53_ATAC_no_unk.cds)
+cone_cells = colnames(d53_ATAC_no_unk.Cones)
+
+rm(d53_ATAC_no_unk.Cones)
+```
+
+```{r}
+d53_ATAC_no_unk.HC <- choose_graph_segments(d53_ATAC_no_unk.cds)
+hc_cells = colnames(d53_ATAC_no_unk.HC)
+
+rm(d53_ATAC_no_unk.HC)
+```
+
+```{r}
+d53_ATAC_no_unk.RGC <- choose_graph_segments(d53_ATAC_no_unk.cds)
+rgc_cells = colnames(d53_ATAC_no_unk.RGC)
+
+rm(d53_ATAC_no_unk.RGC)
+```
+
+
+# mapping branches
+```{r fig.width=15}
+type_lst = list("Cones_branch" = cone_cells,
+                "Horizontal_branch" = hc_cells,
+                "RGC_branch" = rgc_cells)
+
+
+
+d53_ATAC_no_unk$branch = "m"
+for (i in names(type_lst)){
+  d53_ATAC_no_unk@meta.data[type_lst[[i]], "branch"] = paste(d53_ATAC_no_unk@meta.data[type_lst[[i]], "branch"], i, sep = ".")
+  
+  d53_ATAC_no_unk@meta.data[type_lst[[i]], i] = 1
+}
+
+table(d53_ATAC_no_unk$branch)
+
+d53_ATAC_no_unk$branch = dplyr::recode(d53_ATAC_no_unk$branch,
+                                     "m.Cones_branch.Horizontal_branch" = "T0",
+                                     "m.Cones_branch.Horizontal_branch.RGC_branch" = "T0",
+                                     "m.Horizontal_branch.RGC_branch" = "T0")
+
+d53_ATAC_no_unk$branch = stringr::str_remove(d53_ATAC_no_unk$branch, "m.")
+
+d53_ATAC_no_unk$branch[d53_ATAC_no_unk$type == "Progenitors"] = "Progenitors"
+
+unique(d53_ATAC_no_unk$branch)
+
+d53_ATAC_no_unk$branch = factor(d53_ATAC_no_unk$branch, levels = c("Progenitors", "T0", "RGC_branch", "Horizontal_branch", "Cones_branch"))
+
+
+ggplotly(DimPlot(d53_ATAC_no_unk, group.by = "branch", cols = colors[levels(d53_ATAC_no_unk$branch), "V2"]))
+```
+
+```{r fig.width= 20}
+CoveragePlot(d53_ATAC_no_unk,
+             "ATOH7", extend.upstream = 4000, extend.downstream = 4000, region.highlight = StringToGRanges("chr10-68233255-68233641"))
+
+CoveragePlot(d53_ATAC_no_unk,
+             "PTF1A", extend.upstream = 10000, extend.downstream = 10000, region.highlight = StringToGRanges("chr10-23191863-23193139"))
+
+CoveragePlot(d53_ATAC_no_unk,
+             "CRX", extend.upstream = 10000, extend.downstream = 10000, region.highlight = StringToGRanges("chr19-47848650-47849223"))	
+
+CoveragePlot(d53_ATAC_no_unk,
+             "POU4F2", extend.upstream = 10000, extend.downstream = 10000, region.highlight = StringToGRanges("chr4-146637674-146639350"))
+
+CoveragePlot(d53_ATAC_no_unk,
+             "FGF19", extend.upstream = 100000, extend.downstream = 100000, region.highlight = StringToGRanges("chr11-69744476-69745005"))
+CoveragePlot(d53_ATAC_no_unk,
+             "CCND1", extend.upstream = 100000, extend.downstream = 100000) 
+
+
+
+
+CoveragePlot(d53_ATAC_no_unk,
+             "POU4F2", extend.upstream = 10000, extend.downstream = 10000)
+
+CoveragePlot(d53_ATAC_no_unk,
+             "POU4F1", extend.upstream = 10000, extend.downstream = 10000, 
+             region.highlight = StringToGRanges(c("chr13-78605198-78605538")))
+
+CoveragePlot(d53_ATAC_no_unk,
+             "POU4F3", extend.upstream = 10000, extend.downstream = 10000)
+
+DefaultAssay(d53_ATAC_no_unk) = "peaks"
+guess_enhancers(d53_ATAC_no_unk,
+                "POU4F1", 
+                extend.upstream = 10000, extend.downstream = 10000, cuttoff_pct = 0)
+
+FeaturePlot(d53_ATAC_no_unk, "chr13-78605198-78605538", max.cutoff = 1, order = T, pt.size = 1)
+```
+
+```{r}
+fake_bed_53 = data.frame(stringr::str_split_fixed(rownames(d53_ATAC_no_unk), "-", 3))
+fake_bed_53$X2 = as.numeric(fake_bed_53$X2)
+fake_bed_53$X3 = as.numeric(fake_bed_53$X3)
+
+fake_bed_53[fake_bed_53$X1 == "chr11" & fake_bed_53$X2 > 69740000 & fake_bed_53$X2 < 69750000,]
+```
+
+```{r fig.asp=1}
+FeaturePlot(d53_ATAC_no_unk, features = "chr10-68233255-68233641", pt.size = 2, order = T)
+FeaturePlot(d53_ATAC_no_unk, features = "chr10-23191863-23193139", pt.size = 2, order = T)
+FeaturePlot(d53_ATAC_no_unk, features = "chr19-47848650-47849223", pt.size = 2, order = T)
+FeaturePlot(d53_ATAC_no_unk, features = "chr4-146637674-146639350", pt.size = 2, order = T)
+FeaturePlot(d53_ATAC_no_unk, features = "chr11-69744476-69745005", pt.size = 2, order = T)
+FeaturePlot(d53_ATAC_no_unk, "chr13-78605198-78605538", max.cutoff = 1, order = T, pt.size = 1)
+```
+
+
+```{r}
+saveRDS(d53_ATAC_no_unk, "d53_ATAC_no_unk_branches.RDS")
+d53_ATAC_no_unk = readRDS("d53_ATAC_no_unk_branches.RDS")
+```
+
